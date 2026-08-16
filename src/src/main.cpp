@@ -51,12 +51,16 @@ void setup()
 
   if (!pressure_sensor.begin(&Wire))
   {
-    Serial.println("ERROR: Could not initialize sensor!");
-    Serial.println("Check I2C wiring and connections.");
+      display.clearBuffer();
+      display.setFont(u8g2_font_ncenB12_tr);
+      display.setCursor(0, 30);
+      display.print("press. error");
+      display.sendBuffer();
+      delay(500);
+
   }
   load_cell.begin(LOAD_CELL_CLK, LOAD_CELL_DATA);
 
-  Serial.println("TARE !!");
   delay(3000);
 
   float calibration_factor = 23.83382;
@@ -78,17 +82,17 @@ void setup()
   display.clearBuffer();
   display.setFont(u8g2_font_ncenB12_tr);
   display.setCursor(0, 30);
-  display.print("connection wifi...");
+  display.print("connecting...");
   display.sendBuffer();
 
   WiFi.mode(WIFI_STA);
-  wifiMulti.addAP(WIFI_SSID, WIFI_PASSWORD);
-  Serial.print("Connexion au Wi-Fi");
+  wifiMulti.addAP(WIFI_SSID_1, WIFI_PASSWORD_1);
+  wifiMulti.addAP(WIFI_SSID_2, WIFI_PASSWORD_2);
+  wifiMulti.addAP(WIFI_SSID_3, WIFI_PASSWORD_3);
 
   unsigned long startAttemptTime = millis();
   while (wifiMulti.run() != WL_CONNECTED && millis() - startAttemptTime < 20000)
   {
-    Serial.print(".");
     delay(500);
   }
 
@@ -97,7 +101,7 @@ void setup()
     display.clearBuffer();
     display.setFont(u8g2_font_ncenB12_tr);
     display.setCursor(0, 30);
-    display.print("pas de wifi");
+    display.print("wifi failed");
     display.sendBuffer();
 
     delay(5000);
@@ -109,7 +113,9 @@ void setup()
     display.clearBuffer();
     display.setFont(u8g2_font_ncenB12_tr);
     display.setCursor(0, 30);
-    display.print("connecte");
+    display.print("connected");
+    display.setCursor(0, 50);
+    display.print(WiFi.SSID());
     display.sendBuffer();
 
     delay(3000);
@@ -125,14 +131,18 @@ void setup()
 
     if (client.validateConnection())
     {
-      Serial.println(client.getServerUrl());
+        display.clearBuffer();
+        display.setFont(u8g2_font_ncenB12_tr);
+        display.setCursor(0, 30);
+        display.print("server ok");
+        display.sendBuffer();
     }
     else
     {
       display.clearBuffer();
       display.setFont(u8g2_font_ncenB12_tr);
       display.setCursor(0, 30);
-      display.print("erreur serveur");
+      display.print("server error");
       display.sendBuffer();
 
       Serial.println(client.getLastErrorMessage());
@@ -153,7 +163,7 @@ void loop()
     display.clearBuffer();
     display.setFont(u8g2_font_ncenB12_tr);
     display.setCursor(0, 30);
-    display.print("wifi perdu");
+    display.print("lost wifi");
     display.sendBuffer();
     connected_wifi = false;
     delay(1000);
@@ -208,7 +218,7 @@ void loop()
         display.clearBuffer();
         display.setFont(u8g2_font_ncenB12_tr);
         display.setCursor(0, 30);
-        display.print("erreur envoie");
+        display.print("sending error");
         display.sendBuffer();
 
         Serial.println(client.getLastErrorMessage());
