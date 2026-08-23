@@ -10,13 +10,12 @@
 
 #include "secrets.h"
 
-
-const int LOAD_CELL_CLK = D1;
-const int LOAD_CELL_DATA = D0;
+const int LOAD_CELL_CLK = D3;
+const int LOAD_CELL_DATA = D2;
 
 WiFiMulti wifiMulti;
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN);
-U8G2_SSD1306_128X64_NONAME_F_HW_I2C display(U8G2_R0, /* clock=*/SCL, /* data=*/SDA, /* reset=*/U8X8_PIN_NONE); // High speed I2C
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C display(U8G2_R0, /* clock=*/SCL, /* data=*/SDA, /* reset=*/U8X8_PIN_NONE);
 HX711 load_cell;
 ICP101xx pressure_sensor;
 Adafruit_AM2320 am2320 = Adafruit_AM2320();
@@ -29,7 +28,7 @@ float current_force = 0.00;
 bool connected_wifi = false;
 
 #define SEND_INTERVAL 500
-#define AM_INTERVAL 200
+#define AM_INTERVAL 1000
 #define PRESSURE_INTERVAL 2000
 unsigned long last_sent_time = 0;
 unsigned long last_am_time = 0;
@@ -38,7 +37,23 @@ unsigned long last_pressure_time = 0;
 void setup()
 {
   Serial.begin(115200);
-  delay(5000);
+  delay(3000);
+
+
+  pinMode(D4, OUTPUT_OPEN_DRAIN); 
+  pinMode(D5, OUTPUT_OPEN_DRAIN); 
+  digitalWrite(D4, HIGH);
+  digitalWrite(D5, HIGH);
+  delayMicroseconds(10);
+  for (int i = 0; i < 9; i++) {
+    digitalWrite(D5, LOW); delayMicroseconds(10);
+    digitalWrite(D5, HIGH); delayMicroseconds(10);
+  }
+  digitalWrite(D4, LOW); delayMicroseconds(10);
+  digitalWrite(D5, HIGH); delayMicroseconds(10);
+  digitalWrite(D4, HIGH); delayMicroseconds(10);
+
+
   Wire.begin();
 
   display.begin();
@@ -46,41 +61,40 @@ void setup()
   display.clearBuffer();
   display.setFont(u8g2_font_ncenB12_tr);
   display.setCursor(0, 30);
-  display.print("starting...");
   display.sendBuffer();
 
   if (!pressure_sensor.begin(&Wire))
   {
       display.clearBuffer();
-      display.setFont(u8g2_font_ncenB12_tr);
       display.setCursor(0, 30);
       display.print("press. error");
       display.sendBuffer();
       delay(500);
-
   }
-  load_cell.begin(LOAD_CELL_CLK, LOAD_CELL_DATA);
+  pressure_sensor.measureStart(pressure_sensor.VERY_ACCURATE);
 
-  delay(3000);
 
+  load_cell.begin(LOAD_CELL_DATA, LOAD_CELL_CLK);
   float calibration_factor = 23.83382;
   load_cell.set_scale(calibration_factor);
 
   display.clearBuffer();
-  display.setFont(u8g2_font_ncenB12_tr);
   display.setCursor(0, 30);
   display.print("tare...");
   display.sendBuffer();
-  delay(2000);
-
-  load_cell.tare(); // Met à zéro la valeur actuelle
-  Serial.println("tare ok");
+  
+  unsigned long tare_timeout = millis();
+  while (!load_cell.is_ready() && millis() - tare_timeout < 3000) {
+    delay(10);
+  }
+  
+  if (load_cell.is_ready()) {
+    load_cell.tare(); 
+  }
 
   am2320.begin();
-  pressure_sensor.measureStart(pressure_sensor.VERY_ACCURATE);
 
   display.clearBuffer();
-  display.setFont(u8g2_font_ncenB12_tr);
   display.setCursor(0, 30);
   display.print("connecting...");
   display.sendBuffer();
@@ -89,42 +103,34 @@ void setup()
   wifiMulti.addAP(WIFI_SSID_1, WIFI_PASSWORD_1);
   wifiMulti.addAP(WIFI_SSID_2, WIFI_PASSWORD_2);
   wifiMulti.addAP(WIFI_SSID_3, WIFI_PASSWORD_3);
+  wifiMulti.addAP(WIFI_SSID_4, WIFI_PASSWORD_4);
+  wifiMulti.addAP(WIFI_SSID_5, WIFI_PASSWORD_5);
 
   unsigned long startAttemptTime = millis();
   while (wifiMulti.run() != WL_CONNECTED && millis() - startAttemptTime < 20000)
   {
     delay(500);
+    Serial.print(".");
   }
 
   if (wifiMulti.run() != WL_CONNECTED)
   {
     display.clearBuffer();
-    display.setFont(u8g2_font_ncenB12_tr);
     display.setCursor(0, 30);
     display.print("wifi failed");
     display.sendBuffer();
-
-    delay(5000);
+    delay(2000);
   }
   else
   {
     connected_wifi = true;
-
     display.clearBuffer();
-    display.setFont(u8g2_font_ncenB12_tr);
     display.setCursor(0, 30);
     display.print("connected");
     display.setCursor(0, 50);
     display.print(WiFi.SSID());
     display.sendBuffer();
-
-    delay(3000);
-
-    display.clearBuffer();
-    display.setFont(u8g2_font_ncenB12_tr);
-    display.setCursor(0, 30);
-    display.print("setup...");
-    display.sendBuffer();
+    delay(2000);
 
     timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
     client.setInsecure();
@@ -132,23 +138,19 @@ void setup()
     if (client.validateConnection())
     {
         display.clearBuffer();
-        display.setFont(u8g2_font_ncenB12_tr);
         display.setCursor(0, 30);
         display.print("server ok");
         display.sendBuffer();
     }
     else
     {
+      Serial.println(client.getLastErrorMessage());
       display.clearBuffer();
-      display.setFont(u8g2_font_ncenB12_tr);
       display.setCursor(0, 30);
       display.print("server error");
       display.sendBuffer();
-
-      Serial.println(client.getLastErrorMessage());
-
       connected_wifi = false;
-      delay(5000);
+      delay(2000);
     }
 
     sensorData.addTag("device", "XIAO");
@@ -160,14 +162,9 @@ void loop()
 {
   if (wifiMulti.run() != WL_CONNECTED)
   {
-    display.clearBuffer();
-    display.setFont(u8g2_font_ncenB12_tr);
-    display.setCursor(0, 30);
-    display.print("lost wifi");
-    display.sendBuffer();
     connected_wifi = false;
-    delay(1000);
-    return;
+  } else {
+    connected_wifi = true;
   }
 
   if (millis() - last_am_time >= AM_INTERVAL)
@@ -175,6 +172,8 @@ void loop()
     last_am_time = millis();
     current_temp = am2320.readTemperature();
     current_hum = am2320.readHumidity();
+    if (isnan(current_temp)) current_temp = 0.0;
+    if (isnan(current_hum)) current_hum = 0;
   }
 
   if (pressure_sensor.dataReady())
@@ -191,11 +190,8 @@ void loop()
   {
     float raw_force = load_cell.get_units(5) / 1000;
     if (!isnan(raw_force)) {
-      current_force = load_cell.get_units(5) / 1000;
-      if (current_force < 0)
-      {
-        current_force = 0;
-      }
+      current_force = raw_force;
+      if (current_force < 0) current_force = 0;
     }
   }
 
@@ -215,12 +211,7 @@ void loop()
 
       if (!client.writePoint(sensorData))
       {
-        display.clearBuffer();
-        display.setFont(u8g2_font_ncenB12_tr);
-        display.setCursor(0, 30);
-        display.print("sending error");
-        display.sendBuffer();
-
+        Serial.print("Envoi erreur: ");
         Serial.println(client.getLastErrorMessage());
       }
     }
@@ -252,5 +243,5 @@ void loop()
 
   display.sendBuffer();
 
-  delay(100);
+  delay(50);
 }
