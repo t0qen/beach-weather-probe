@@ -1,0 +1,3 @@
+{
+    "C_Cpp.default.compilerPath": "/home/dev/.platformio/packages/toolchain-riscv32-esp/bin/riscv32-esp-elf-gcc"
+}
